@@ -43,30 +43,48 @@ type config struct {
 
 // GRPCChromecastController wraps the cast-control server to control a single device
 type GRPCChromecastController struct {
-	Client *pb.CastControlClient
-	UUID   string
+	client *pb.CastControlClient
+	uuid   string
 }
 
-func adjustVolume(client pb.CastControlClient, uuid string, amount float64) float64 {
+func (c *GRPCChromecastController) adjustVolume(amount float64) float64 {
 	// TODO: Error-check for a 0-level adjustment, which is invalid
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	newVolume, err := client.AdjustVolume(ctx, &pb.AdjustVolumeRequest{DeviceId: &pb.DeviceID{Uuid: uuid}, RelativeVolume: amount})
+	newVolume, err := (*c.client).AdjustVolume(
+		ctx,
+		&pb.AdjustVolumeRequest{
+			DeviceId:       &pb.DeviceID{Uuid: c.uuid},
+			RelativeVolume: amount})
 	if err != nil {
-		log.Fatalf("%v.AdjustVolume(_) = _, %v", client, err)
+		log.Fatalf("%v.AdjustVolume(_) = _, %v", *c.client, err)
 	}
 	return newVolume.GetVolume()
 }
 
-func setVolume(client pb.CastControlClient, uuid string, volumeLevel float64) float64 {
+func (c *GRPCChromecastController) setVolume(volumeLevel float64) float64 {
 	// TODO: Error check acceptable range (0-1)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	newVolume, err := client.SetVolume(ctx, &pb.SetVolumeRequest{DeviceId: &pb.DeviceID{Uuid: uuid}, Volume: volumeLevel})
+	newVolume, err := (*c.client).SetVolume(
+		ctx,
+		&pb.SetVolumeRequest{
+			DeviceId: &pb.DeviceID{Uuid: c.uuid},
+			Volume:   volumeLevel})
 	if err != nil {
-		log.Fatalf("%v.SetVolume(_) = _, %v", client, err)
+		log.Fatalf("%v.SetVolume(_) = _, %v", *c.client, err)
 	}
 	return newVolume.GetVolume()
+}
+
+func (c *GRPCChromecastController) getStatus() *pb.Status {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	status, err := (*c.client).GetDeviceStatus(ctx, &pb.DeviceID{Uuid: c.uuid})
+	if err != nil {
+		log.Fatalf("%v.GetDeviceStatus(_) = _, %v", *c.client, err)
+	}
+	return status
 }
 
 func listDevices(client pb.CastControlClient) []*pb.Device {
@@ -89,16 +107,6 @@ func listDevices(client pb.CastControlClient) []*pb.Device {
 		devices = append(devices, device)
 	}
 	return devices
-}
-
-func getStatus(client pb.CastControlClient, uuid string) *pb.Status {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	status, err := client.GetDeviceStatus(ctx, &pb.DeviceID{Uuid: uuid})
-	if err != nil {
-		log.Fatalf("%v.GetDeviceStatus(_) = _, %v", client, err)
-	}
-	return status
 }
 
 /* Workflow
@@ -208,7 +216,7 @@ func main() {
 	// If the configuration file doesn't exist, this is probably a first-time run
 	if _, err := os.Stat(configFilePath); os.IsNotExist(err) {
 		fmt.Println("It looks like this is the first time running cast-control.")
-		fmt.Println("Run the configure command to set up a device.")
+		fmt.Println("Run the `configure` command to set up a device.")
 		return
 	}
 
@@ -229,22 +237,23 @@ func main() {
 	}
 	defer conn.Close()
 	client := pb.NewCastControlClient(conn)
+	controller := GRPCChromecastController{client: &client, uuid: conf.ChromecastUUID}
 
 	switch commandString {
 	case "volume up":
-		newVolume := adjustVolume(client, conf.ChromecastUUID, *volumeUpAmount)
+		newVolume := controller.adjustVolume(*volumeUpAmount)
 		fmt.Printf("Volume increased to %.3f\n", newVolume)
 
 	case "volume down":
-		newVolume := adjustVolume(client, conf.ChromecastUUID, *volumeDownAmount*-1)
+		newVolume := controller.adjustVolume(*volumeDownAmount * -1)
 		fmt.Printf("Decreased volume to %.3f\n", newVolume)
 
 	case "volume set":
-		newVolume := setVolume(client, conf.ChromecastUUID, *setVolumeLevel)
+		newVolume := controller.setVolume(*setVolumeLevel)
 		fmt.Printf("Volume set to %.3f\n", newVolume)
 
 	case "status":
-		status := getStatus(client, conf.ChromecastUUID)
+		status := controller.getStatus()
 		fmt.Printf("Volume=%.3f, Muted=%t\n", status.GetVolume(), status.GetMuted())
 	}
 }
