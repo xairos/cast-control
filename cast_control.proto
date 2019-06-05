@@ -1,0 +1,41 @@
+syntax = "proto3";
+package cast_control;
+
+service CastControl {
+    // Method definitions go here
+    rpc ListDevices (ListDeviceRequest) returns (stream Device) {}
+    rpc GetDeviceStatus (DeviceID) returns (Status) {}
+    rpc AdjustVolume (AdjustVolumeRequest) returns (Volume) {}
+    rpc SetVolume (SetVolumeRequest) returns (Volume) {}
+}
+
+message DeviceID {
+    string uuid = 1;
+}
+
+message Device {
+    string friendly_name = 1;
+    string model_name = 2;
+    string manufacturer = 3;
+    DeviceID device_id = 4;
+    string cast_type = 5;
+}
+
+message Status {
+    double volume = 1;
+    bool muted = 2;
+}
+
+message Volume {
+    double volume = 1;
+}
+
+message ListDeviceRequest {}
+message AdjustVolumeRequest {
+    DeviceID device_id = 1;
+    double relative_volume = 2;
+}
+message SetVolumeRequest {
+    DeviceID device_id = 1;
+    double volume = 2;
+}
