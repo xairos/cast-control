@@ -13,6 +13,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/OpenPeeDeeP/xdg"
+	"github.com/pkg/errors"
 	pb "github.com/xairos/cast-control/client/protocol"
 	"google.golang.org/grpc"
 	"gopkg.in/alecthomas/kingpin.v2"
@@ -33,8 +34,6 @@ var (
 	statusCmd        = app.Command("status", "Get the status of the device.")
 )
 
-var defaultServerAddress = "localhost:7004"
-
 // Cached configuration format
 type config struct {
 	ServerAddress  string `json:"serverAddress"`
@@ -47,8 +46,11 @@ type GRPCChromecastController struct {
 	uuid   string
 }
 
-func (c *GRPCChromecastController) adjustVolume(amount float64) float64 {
-	// TODO: Error-check for a 0-level adjustment, which is invalid
+func (c *GRPCChromecastController) adjustVolume(amount float64) (float64, error) {
+	if amount == 0 {
+		return 0, errors.New("0 adjustment is invalid")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	newVolume, err := (*c.client).AdjustVolume(
@@ -57,13 +59,17 @@ func (c *GRPCChromecastController) adjustVolume(amount float64) float64 {
 			DeviceId:       &pb.DeviceID{Uuid: c.uuid},
 			RelativeVolume: amount})
 	if err != nil {
-		log.Fatalf("%v.AdjustVolume(_) = _, %v", *c.client, err)
+		return 0, errors.Wrap(err, "Failed call to client.AdjustVolume()")
+		// log.Fatalf("%v.AdjustVolume(_) = _, %v", *c.client, err)
 	}
-	return newVolume.GetVolume()
+	return newVolume.GetVolume(), nil
 }
 
-func (c *GRPCChromecastController) setVolume(volumeLevel float64) float64 {
-	// TODO: Error check acceptable range (0-1)
+func (c *GRPCChromecastController) setVolume(volumeLevel float64) (float64, error) {
+	if volumeLevel < 0 || volumeLevel > 1 {
+		return 0, errors.New("Volume level must be between 0 and 1")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	newVolume, err := (*c.client).SetVolume(
@@ -72,9 +78,10 @@ func (c *GRPCChromecastController) setVolume(volumeLevel float64) float64 {
 			DeviceId: &pb.DeviceID{Uuid: c.uuid},
 			Volume:   volumeLevel})
 	if err != nil {
-		log.Fatalf("%v.SetVolume(_) = _, %v", *c.client, err)
+		return 0, errors.Wrap(err, "Failed call to client.SetVolume()")
+		// log.Fatalf("%v.SetVolume(_) = _, %v", *c.client, err)
 	}
-	return newVolume.GetVolume()
+	return newVolume.GetVolume(), nil
 }
 
 func (c *GRPCChromecastController) getStatus() *pb.Status {
@@ -235,15 +242,15 @@ func main() {
 
 	switch commandString {
 	case "volume up":
-		newVolume := controller.adjustVolume(*volumeUpAmount)
+		newVolume, _ := controller.adjustVolume(*volumeUpAmount)
 		fmt.Printf("Volume increased to %.3f\n", newVolume)
 
 	case "volume down":
-		newVolume := controller.adjustVolume(*volumeDownAmount * -1)
+		newVolume, _ := controller.adjustVolume(*volumeDownAmount * -1)
 		fmt.Printf("Decreased volume to %.3f\n", newVolume)
 
 	case "volume set":
-		newVolume := controller.setVolume(*setVolumeLevel)
+		newVolume, _ := controller.setVolume(*setVolumeLevel)
 		fmt.Printf("Volume set to %.3f\n", newVolume)
 
 	case "status":

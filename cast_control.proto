@@ -2,7 +2,6 @@ syntax = "proto3";
 package cast_control;
 
 service CastControl {
-    // Method definitions go here
     rpc ListDevices (ListDeviceRequest) returns (stream Device) {}
     rpc GetDeviceStatus (DeviceID) returns (Status) {}
     rpc AdjustVolume (AdjustVolumeRequest) returns (Volume) {}
