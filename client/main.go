@@ -178,12 +178,6 @@ func main() {
 	cmdHandled := true
 	switch commandString {
 	case "configure":
-		// My brain is starting to cook
-		// What is the logic supposed to be here?
-		// If the folder doesn't exist, create it
-		// If the file doesn't exist, complain and run through the setup (can set to defaults for now)
-		// Here, we want to overwrite the file contents anyways!
-
 		// Launch the configuration wizard to prompt the user for values
 		configToWrite := configureWizard()
 
@@ -195,7 +189,7 @@ func main() {
 			}
 		}
 
-		// Write out the (default, for now) JSON configuration
+		// Write out the JSON configuration file
 		jsonData, err := json.Marshal(configToWrite)
 		if err != nil {
 			log.Fatalf("Couldn't marshal config to json: %v", err)
