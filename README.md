@@ -8,7 +8,7 @@ The Golang client binary connects to the daemon and executes commands against it
 
 Run the server daemon on localhost:
 ```
-~/server$ docker built -t xairos/cast-control .
+~/server$ docker build -t xairos/cast-control .
 ~/server$ docker run -d --rm -p 7004:7004 xairos/cast-control
 ```
 
