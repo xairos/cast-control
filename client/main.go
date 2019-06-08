@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	app   = kingpin.New("cast-control", "Control Chromecast devices on your network.")
+	app   = kingpin.New("cast-control", "Control the Cast devices on your network.")
 	debug = kingpin.Flag("debug", "Enable debug mode.").Bool()
 
 	configureCmd     = app.Command("configure", "Interactively set the tool's configuration values.")
@@ -59,8 +59,7 @@ func (c *GRPCChromecastController) adjustVolume(amount float64) (float64, error)
 			DeviceId:       &pb.DeviceID{Uuid: c.uuid},
 			RelativeVolume: amount})
 	if err != nil {
-		return 0, errors.Wrap(err, "Failed call to client.AdjustVolume()")
-		// log.Fatalf("%v.AdjustVolume(_) = _, %v", *c.client, err)
+		return 0, errors.Wrap(err, fmt.Sprintf("Failed to communicate with server"))
 	}
 	return newVolume.GetVolume(), nil
 }
@@ -78,28 +77,27 @@ func (c *GRPCChromecastController) setVolume(volumeLevel float64) (float64, erro
 			DeviceId: &pb.DeviceID{Uuid: c.uuid},
 			Volume:   volumeLevel})
 	if err != nil {
-		return 0, errors.Wrap(err, "Failed call to client.SetVolume()")
-		// log.Fatalf("%v.SetVolume(_) = _, %v", *c.client, err)
+		return 0, errors.Wrap(err, fmt.Sprintf("Failed to communicate with server"))
 	}
 	return newVolume.GetVolume(), nil
 }
 
-func (c *GRPCChromecastController) getStatus() *pb.Status {
+func (c *GRPCChromecastController) getStatus() (*pb.Status, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	status, err := (*c.client).GetDeviceStatus(ctx, &pb.DeviceID{Uuid: c.uuid})
 	if err != nil {
-		log.Fatalf("%v.GetDeviceStatus(_) = _, %v", *c.client, err)
+		return nil, errors.Wrap(err, fmt.Sprintf("Failed to communicate with server"))
 	}
-	return status
+	return status, nil
 }
 
-func listDevices(client pb.CastControlClient) []*pb.Device {
+func listDevices(client pb.CastControlClient) ([]*pb.Device, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	stream, err := client.ListDevices(ctx, &pb.ListDeviceRequest{})
 	if err != nil {
-		log.Fatalf("%v.ListDevices(_) = _, %v: ", client, err)
+		return nil, errors.Wrap(err, fmt.Sprintf("Failed to communicate with server"))
 	}
 
 	devices := []*pb.Device{}
@@ -109,11 +107,11 @@ func listDevices(client pb.CastControlClient) []*pb.Device {
 			break
 		}
 		if err != nil {
-			log.Fatalf("%v.ListDevices(_) = _, %v", client, err)
+			return nil, errors.Wrap(err, fmt.Sprintf("Connection broke with server"))
 		}
 		devices = append(devices, device)
 	}
-	return devices
+	return devices, nil
 }
 
 /* Workflow
@@ -129,6 +127,7 @@ Failed (loop) / Success.
 func configureWizard() *config {
 	serverAddress := ""
 	var conn *grpc.ClientConn
+	var chromecasts []*pb.Device
 	for {
 		serverAddressPrompt := &survey.Input{
 			Message: "Server address (ex. localhost:7004)",
@@ -143,12 +142,17 @@ func configureWizard() *config {
 			fmt.Printf("Failed to connect to address: %s\n", serverAddress)
 			continue
 		}
+
+		client := pb.NewCastControlClient(conn)
+		chromecasts, _ = listDevices(client)
+		if len(chromecasts) == 0 {
+			fmt.Println("Server has no Cast devices available.")
+			continue
+		}
+
 		break
 	}
 	defer conn.Close()
-
-	client := pb.NewCastControlClient(conn)
-	chromecasts := listDevices(client)
 
 	// Build a map from option -> device
 	deviceMap := make(map[string]*pb.Device, len(chromecasts))
@@ -242,19 +246,35 @@ func main() {
 
 	switch commandString {
 	case "volume up":
-		newVolume, _ := controller.adjustVolume(*volumeUpAmount)
+		newVolume, err := controller.adjustVolume(*volumeUpAmount)
+		if err != nil {
+			fmt.Println(err.Error())
+			return
+		}
 		fmt.Printf("Volume increased to %.3f\n", newVolume)
 
 	case "volume down":
-		newVolume, _ := controller.adjustVolume(*volumeDownAmount * -1)
+		newVolume, err := controller.adjustVolume(*volumeDownAmount * -1)
+		if err != nil {
+			fmt.Println(err.Error())
+			return
+		}
 		fmt.Printf("Decreased volume to %.3f\n", newVolume)
 
 	case "volume set":
-		newVolume, _ := controller.setVolume(*setVolumeLevel)
+		newVolume, err := controller.setVolume(*setVolumeLevel)
+		if err != nil {
+			fmt.Println(err.Error())
+			return
+		}
 		fmt.Printf("Volume set to %.3f\n", newVolume)
 
 	case "status":
-		status := controller.getStatus()
+		status, err := controller.getStatus()
+		if err != nil {
+			fmt.Println(err.Error())
+			return
+		}
 		fmt.Printf("Volume=%.3f, Muted=%t\n", status.GetVolume(), status.GetMuted())
 	}
 }
