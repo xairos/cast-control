@@ -8,7 +8,7 @@ The Python server runs on the same network as the Cast device (for example, on a
 Run the server daemon on localhost:
 ```
 ~/server$ docker build -t xairos/cast-control .
-~/server$ docker run -it --rm -network host xairos/cast-control
+~/server$ docker run -it --rm --network host xairos/cast-control
 ```
 
 Now you are ready to configure and use the client!
